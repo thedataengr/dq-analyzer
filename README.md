@@ -1,13 +1,13 @@
 # DQ-Analyzer: AI-Powered Data Quality Insights
 
-**DQ-Analyzer** is an automated data quality exploration tool that integrates directly with PostgreSQL and performs column-level analysis across multiple tables concurrently by leveraging **asynchronous execution**. It utilizes local Large Language Models (via Ollama) to generate human-readable interpretations and remediation recommendations, empowering engineers to identify and resolve data quality issues faster.
+**DQ-Analyzer** AI-powered data quality exploration tool that integrates directly with PostgreSQL and performs column-level analysis across multiple tables concurrently by leveraging **asynchronous execution**. It utilizes local Large Language Models (via Ollama) to generate human-readable interpretations and remediation recommendations, empowering engineers to identify and resolve data quality issues faster.
 
 ---
 
 ### 🚀 What It Does
 * **Automated Null Analysis:** Calculates null counts and percentages at both the column and table levels across your entire PostgreSQL schema.
 * **Local LLM Integration:** Leverages local LLMs (Ollama) to transform statistical output into insightful natural language summaries.
-* **Interactive Data Chat:** Provides a conversational interface to ask questions to AI about your table structure and data quality. AI can also generate SQL queries for you to delve deep into data quality issues.
+* **Interactive Data Chat:** Interactive multi-turn chat session to ask questions to AI about table structure and data quality. AI can also generate SQL queries to delve deep into data quality issues.
 * **Intelligent Prompting:** Uses a specialized "DQ Expert" system prompt to ensure LLM responses are technical, accurate, and actionable.
 * **Formatted Reporting:** Generates neatly formatted data quality reports and LLM analysis.
 
@@ -38,7 +38,7 @@ The project follows a modular, **non-blocking design**. The `async_reporter` uti
 ### ⚙️ Setup
 1. **Clone the repository:**
    ```bash
-   git clone [your-repo-url]
+   git clone https://github.com/thedataengr/dq-analyzer.git
    cd dq-analyzer
    
 2. **Setup virtual environment:**
@@ -55,9 +55,14 @@ The project follows a modular, **non-blocking design**. The `async_reporter` uti
    * Copy .env.example to .env and add your database credentials.
    
 
-4. **Pull Ollama model:**
+4. **Set up sample database:**
+```bash
+   psql -U your_username -f scripts/setup_db.sql
+```
+
+5. **Pull Ollama model:**
    ```bash
-   ollama pull llama3
+   ollama pull llama3.2
 
 ---
 
