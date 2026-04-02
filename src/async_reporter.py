@@ -7,16 +7,36 @@ from src.db_inspector import DBInspector
 from src.reporter import DQReporter
 
 class AsyncDQReporter:
+    """Coordinate concurrent AI analysis across multiple table profiles.
+
+    Attributes:
+        inspector: Database inspector used to fetch null statistics.
+        llm_client: Async LLM client used for table analysis.
+        reporter: Reporter used to print completed analysis results.
+
+    """
     def __init__(self, inspector: DBInspector, llm_client: AsyncLLMClient, reporter: DQReporter):
+        """Store dependencies required for concurrent report enrichment.
+
+        Args:
+            inspector: Database inspector used for table profiling data.
+            llm_client: Async LLM client used for table analysis.
+            reporter: Reporter used to render completed analysis.
+
+        """
         self.inspector = inspector
         self.llm_client = llm_client
         self.reporter = reporter
 
     async def analyse_all_tables(self, profiles: list[TableProfile]):
-        """
-        uses asyncio.gather to analyse ALL tables concurrently, returns list of analysis dicts
-        :param profiles:
-        :return:
+        """Analyze all supplied tables concurrently.
+
+        Args:
+            profiles: Table profiles to analyze.
+
+        Returns:
+            list: Analysis results or exceptions returned by the concurrent tasks.
+
         """
         # Fetch all null stats concurrently
         null_stats_list = await asyncio.gather(*[
@@ -35,10 +55,14 @@ class AsyncDQReporter:
         return await asyncio.gather(*llm_tasks, return_exceptions=True)
 
     async def run_full_analysis(self, profiles: list[TableProfile]):
-        """
-        calls analyse_all_tables and prints each result
-        :param profiles: list[TableProfile]
-        :return: None
+        """Run concurrent analysis for all tables and print each result.
+
+        Args:
+            profiles: Table profiles to analyze.
+
+        Returns:
+            None
+
         """
         table_analysis = await self.analyse_all_tables(profiles)
         for ta in table_analysis:
@@ -48,11 +72,15 @@ class AsyncDQReporter:
 
 
     async def run_sync_in_thread(self, sync_func, *args):
-        """
-        Run a synchronous function in a thread pool without blocking the event loop
-        :param sync_func: name of synchronous function
-        :param args: arguments of synchronous function
-        :return: result of synchronous function
+        """Run a synchronous function in a worker thread.
+
+        Args:
+            sync_func: Synchronous callable to execute.
+            *args: Positional arguments forwarded to the callable.
+
+        Returns:
+            Any: Result returned by the synchronous callable.
+
         """
         loop = asyncio.get_running_loop()
         with ThreadPoolExecutor() as pool:

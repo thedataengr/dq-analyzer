@@ -3,10 +3,28 @@ from src.models import TableProfile
 import csv
 
 class DQReporter:
+    """Generate, print, and export data quality profiling reports.
+
+    Attributes:
+        inspector: Database inspector used to gather profiling metrics.
+
+    """
     def __init__(self, inspector: DBInspector):
+        """Store the inspector used to gather table profiling metrics.
+
+        Args:
+            inspector: Database inspector used for table profiling.
+
+        """
         self.inspector = inspector
 
     def run_full_report(self) -> list[TableProfile]:
+        """Profile every table and return the resulting table summaries.
+
+        Returns:
+            list[TableProfile]: Profiles for all discovered tables.
+
+        """
         table_names = self.inspector.get_table_names()
 
         tables = []
@@ -20,6 +38,15 @@ class DQReporter:
         return tables
 
     def print_report(self, profiles: list[TableProfile]) :
+        """Print the full per-table data quality report to stdout.
+
+        Args:
+            profiles: Table profiles to print.
+
+        Returns:
+            None
+
+        """
         print("=============================================================================")
         print("DATA QUALITY REPORT")
         print("=============================================================================")
@@ -30,6 +57,15 @@ class DQReporter:
         print("=============================================================================\n")
 
     def get_summary(self,profiles: list[TableProfile]) -> dict:
+        """Aggregate a collection of table profiles into summary counts.
+
+        Args:
+            profiles: Table profiles to summarize.
+
+        Returns:
+            dict: Summary counts and the most problematic table name.
+
+        """
         total_tables_cnt = len(profiles)
         critical_tables_cnt = len([t for t in profiles if t.get_status() == "critical"])
         warning_tables_cnt = len([t for t in profiles if t.get_status() == "warning"])
@@ -45,6 +81,15 @@ class DQReporter:
         }
 
     def print_summary(self, summary: dict):
+        """Print the aggregated report summary to stdout.
+
+        Args:
+            summary: Report summary values to print.
+
+        Returns:
+            None
+
+        """
         print("===============================================")
         print("SUMMARY")
         print("===============================================")
@@ -58,6 +103,16 @@ class DQReporter:
 
 
     def export_report_csv(self, profiles: list[TableProfile], filepath: str):
+        """Write the table profiles to a CSV report file.
+
+        Args:
+            profiles: Table profiles to export.
+            filepath: Destination path for the CSV file.
+
+        Returns:
+            None
+
+        """
         with open(filepath, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=["table_name","row_count","column_count","null_pct","status"])
             writer.writeheader()
@@ -71,6 +126,15 @@ class DQReporter:
                 })
 
     def print_ai_interpretation(self, ai_response: str):
+        """Print a high-level AI interpretation of the report.
+
+        Args:
+            ai_response: AI-generated summary text.
+
+        Returns:
+            None
+
+        """
         print("\n============================================================")
         print("AI INTERPRETATION")
         print("============================================================")
@@ -78,6 +142,15 @@ class DQReporter:
         print("============================================================")
 
     def print_ai_table_analysis(self, table_analysis: dict):
+        """Print AI-generated analysis details for a single table.
+
+        Args:
+            table_analysis: Structured AI analysis for one table.
+
+        Returns:
+            None
+
+        """
         print("================================================================================")
         print(f"AI ANALYSIS: {table_analysis['table']}")
         print("================================================================================")

@@ -1,107 +1,192 @@
-# DQ-Analyzer: AI-Powered Data Quality Insights
+# DQ-Analyzer: AI-Powered Data Quality Agent
 
-**DQ-Analyzer** AI-powered data quality exploration tool that integrates directly with PostgreSQL and performs column-level analysis across multiple tables concurrently by leveraging **asynchronous execution**. It utilizes local Large Language Models (via Ollama) to generate human-readable interpretations and remediation recommendations, empowering engineers to identify and resolve data quality issues faster.
-
----
-
-### 🚀 What It Does
-* **Automated Null Analysis:** Calculates null counts and percentages at both the column and table levels across your entire PostgreSQL schema.
-* **Local LLM Integration:** Leverages local LLMs (Ollama) to transform statistical output into insightful natural language summaries.
-* **Interactive Data Chat:** Interactive multi-turn chat session to ask questions to AI about table structure and data quality. AI can also generate SQL queries to delve deep into data quality issues.
-* **Intelligent Prompting:** Uses a specialized "DQ Expert" system prompt to ensure LLM responses are technical, accurate, and actionable.
-* **Formatted Reporting:** Generates neatly formatted data quality reports and LLM analysis.
+**DQ-Analyzer** is a PostgreSQL-focused data quality exploration tool with a Streamlit UI, rule-based profiling workflows, deterministic Great Expectations checks, and a Gemini-backed agent that can investigate issues, propose SQL fixes, and require human approval before applying changes.
 
 ---
 
-### 🛠️ Tech Stack
+## Agent Capabilities
+The DQ agent can:
+- Discover and profile all tables autonomously
+- Run deterministic checks via Great Expectations
+- Reason about data quality issues using Gemini
+- Propose SQL fixes with row-level impact estimates
+- Apply fixes only after human approval
+- Maintain an audit trail of all fix attempts
+- Answer follow-up questions about findings
+
+---
+
+## 🛠️ Tech Stack
 * **Language:** Python 3.10+
 * **Database:** PostgreSQL
-* **ORM:** SQLAlchemy
-* **AI/LLM:** Ollama (Local)
-* **Concurrency:** asyncio & httpx (for high-performance, non-blocking LLM and DB operations)
-* **Future Roadmap:** LangGraph for agentic data quality workflows.
+* **ORM / SQL Layer:** SQLAlchemy
+* **UI:** Streamlit
+* **LLM / Agent:** Gemini + LangGraph
+* **Validation:** Great Expectations
+* **Concurrency:** asyncio & httpx 
+* **Observability:** LangSmith (optional)
 
 ---
 
-### 🏗️ Architecture
-The project follows a modular, **non-blocking design**. The `async_reporter` utilizes `asyncio` and ThreadPoolExecutor to orchestrate metadata retrieval across multiple tables concurrently, while `async_llm_client` uses `httpx` to communicate with the local Ollama API without stalling the main event loop. This allows the system to remain responsive even when processing large schemas or waiting for AI-generated interpretations. The `reporter` handles formatted reporting. The `prompts.py` module acts as the "brain," holding the system persona and logic to generate context-aware prompts for analysis. Conversation state is managed by `conversation` module and `chat_session` handles context-aware chat with LLM , while `main.py` orchestrates the entire pipeline.
+## 🏗️ Architecture
+The repo has three main execution paths:
+
+* **Streamlit app:** `app.py` is the primary user experience. It initializes the database connection, compiles the agent graph, and exposes chat, fix approval, and report workflows in the UI.
+* **Rule-based analysis pipeline:** `graphs/dq_basic_graph.py` defines a LangGraph workflow for schema inspection, null-stat analysis, severity classification, optional LLM interpretation, and escalation/logging.
+* **Gemini-backed tool agent:** `graphs/dq_agent_graph.py` wires Gemini tool-calling with human approval for fix execution. Tool declarations and execution live in `src/dq_tools.py`, `src/lc_tools.py`, and `src/tool_registry.py`.
+
+Supporting modules handle database access, profiling, reporting, prompts, audit logging, and optional LangSmith observability.
+
+```mermaid
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	agent(agent)
+	tools(tools)
+	fix_node(fix_node)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> agent;
+	agent -.-> __end__;
+	agent -.-> fix_node;
+	agent -.-> tools;
+	fix_node --> agent;
+	tools --> agent;
+```
 
 ---
 
-### 📋 Prerequisites
+## 📋 Prerequisites
 * **Python 3.10+**
-* **PostgreSQL** instance with read access.
-* **Ollama** installed and running locally ([Download here](https://ollama.com/)).
+* **PostgreSQL** instance with read access
+* **Gemini API key**
+* **LangSmith credentials** only if you want tracing enabled
 
 ---
 
-### ⚙️ Setup
-1. **Clone the repository:**
+## ⚙️ Setup
+1. **Clone the repository**
    ```bash
    git clone https://github.com/thedataengr/dq-analyzer.git
    cd dq-analyzer
-   
-2. **Setup virtual environment:**
+   ```
+
+2. **Create and activate a virtual environment**
    ```bash
-    python -m venv .venv
-    # Windows
-    .venv\Scripts\activate
-    # Mac/Linux
-    source .venv/bin/activate
+   python -m venv .venv
+   ```
 
-    pip install -r requirements.txt
+   Windows:
+   ```bash
+   .venv\Scripts\activate
+   ```
 
-3. **Configure Environment Variables:**
-   * Copy .env.example to .env and add your database credentials.
-   
+   macOS / Linux:
+   ```bash
+   source .venv/bin/activate
+   ```
 
-4. **Set up sample database:**
-```bash
+3. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Configure environment variables**
+   Copy `.env.example` to `.env` and add your database credentials and Gemini API Key
+   ```bash
+   cp .env.example .env
+   ```
+
+5. **Set up the sample database** 
+   ```bash
    psql -U your_username -f scripts/setup_db.sql
-```
-
-5. **Pull Ollama model:**
-   ```bash
-   ollama pull llama3.2
+   ```
 
 ---
 
-### 💡 Usage
-Run the analyzer with:
+## 🏃 How to Run
 
-    python main.py
+### Streamlit UI (recommended)
+```bash
+streamlit run app.py
+```
+
+### CLI Agent (interactive)
+```bash
+python run_dq_agent.py
+```
+
+### Standalone DQ Checks
+```bash
+python run_dq_checks.py
+```
+
+### Basic Graph Runner
+```bash
+python run_graph.py
+```
+
+### Raw Tool Agent Runner
+```bash
+python run_tool_agent.py
+```
+
+### CLI Reporter / Async Analysis Flow
+```bash
+python main.py
+```
 
 ### Example Chat Queries
 * "Which table needs the most attention based on the current null counts?"
 * "Write SQL to check rows with null values in column user_email."
+* "Which tables have the highest null percentage?"
+* "Propose a safe fix for missing values in the email column."
 
 ---
 
-### 📂 Project Structure
-    dq-analyzer/
-    ├── .venv/            # Virtual environment
-    ├── scripts/          # Database utility scripts (e.g., setup_db.sql)
-    ├── src/              # Core application logic
-    │   ├── __init__.py
-    │   ├── async_llm_client.py   # Asynchronous communication with Ollama
-    │   ├── async_reporter.py     # Asynchronous null statistics collection and analysis
-    │   ├── chat_session.py       # Manages chat session with history and context of chat
-    │   ├── conversation.py       # Handles chat history
-    │   ├── database.py           # Database connection setup and querying
-    │   ├── db_inspector.py       # Logic for schema exploration
-    │   ├── llm_client.py         # Synchronous LLM wrapper
-    │   ├── models.py             # Manages Table Profile
-    │   ├── prompts.py            # AI system prompt and user prompt generation
-    │   └── reporter.py           # Formatted report generation
-    ├── .env.example      # Template for configuration
-    ├── .gitignore        # Git ignore rules
-    ├── main.py           # Main entry point
-    └── requirements.txt  # Project dependencies
+## 📂 Project Structure
+```text
+dq-analyzer/
+├── graphs/
+│   ├── __init__.py
+│   ├── dq_agent_graph.py      # Gemini-backed tool-use agent graph
+│   └── dq_basic_graph.py      # Rule-based LangGraph pipeline
+├── scripts/
+│   └── setup_db.sql
+├── src/
+│   ├── __init__.py
+│   ├── async_llm_client.py    # Async LLM wrapper
+│   ├── async_reporter.py      # Concurrent table analysis orchestration
+│   ├── audit.py               # Audit logging for fix attempts
+│   ├── base_llm_client.py     # Shared LLM client interface
+│   ├── chat_session.py        # Interactive CLI chat session
+│   ├── conversation.py        # Conversation history management
+│   ├── database.py            # Database connection and query execution
+│   ├── db_inspector.py        # Schema and table profiling helpers
+│   ├── dq_checker.py          # Great Expectations-based DQ checks
+│   ├── dq_tools.py            # Gemini tool declarations and handlers
+│   ├── gemini_client.py       # Gemini API client
+│   ├── lc_tools.py            # LangChain-style tools
+│   ├── llm_client.py          # Sync LLM wrapper
+│   ├── models.py              # Table profile models
+│   ├── observability.py       # LangSmith helpers
+│   ├── prompts.py             # Prompt generation
+│   ├── reporter.py            # Report formatting and export
+│   ├── tool_agent.py          # Gemini-driven tool agent loop
+│   └── tool_registry.py       # Tool declaration and execution registry
+├── .env.example               # Environment variable template
+├── .gitignore
+├── app.py                     # Streamlit UI
+├── main.py                    # CLI reporter / async analysis entry point
+├── run_dq_agent.py            # Interactive CLI agent
+├── run_dq_checks.py           # Standalone GX checks runner
+├── run_graph.py               # Basic graph runner
+├── run_tool_agent.py          # Raw tool agent runner
+├── README.md
+└── requirements.txt
+```
 
 ---
 
-### 🗺️ Roadmap
-* [ ] Multi-tool Data Quality Agent using LangGraph 
-* [ ] Defining and running DQ checks programmatically using Great Expectations / Soda Core
-* [ ] UI for interactive exploration
-
+## 🗺️ Roadmap
+* [ ] Expand the DQ agent into a broader multi-tool data operations assistant
+* [ ] Add richer rule packs and table-specific validation suites
+* [ ] Improve UI workflows for issue review, fix approval, and audit inspection

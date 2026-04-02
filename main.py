@@ -12,6 +12,12 @@ from src.async_llm_client import AsyncLLMClient
 from src.async_reporter import AsyncDQReporter
 
 async def main():
+    """Run the report workflow and optional interactive chat session.
+
+    Returns:
+        None
+
+    """
     db = Database()
     if not db.test_connection():
         sys.exit(1)

@@ -3,15 +3,39 @@ from src.prompts import DQ_SYSTEM_PROMPT
 from src.db_inspector import DBInspector
 from src.models import TableProfile
 from src.reporter import DQReporter
-from src.llm_client import LLMClient
 
 class DQChatSession:
-    def __init__(self, llm_client: LLMClient, inspector: DBInspector, reporter: DQReporter):
+    """Manage an interactive CLI chat session over-analyzed table data.
+
+    Attributes:
+        llm_client: LLM client used to answer user questions.
+        inspector: Database inspector used to fetch schema and null details.
+        reporter: Reporter instance associated with the current workflow.
+
+    """
+    def __init__(self, llm_client, inspector: DBInspector, reporter: DQReporter):
+        """Store collaborators required for interactive data quality chat.
+
+        Args:
+            llm_client: Client used to generate chat responses.
+            inspector: Database inspector used to fetch table metadata.
+            reporter: Reporter associated with the current analysis workflow.
+
+        """
         self.llm_client = llm_client
         self.inspector = inspector
         self.reporter = reporter
 
     def start(self, profiles: list[TableProfile]):
+        """Start the interactive prompt loop with the supplied table profiles.
+
+        Args:
+            profiles: Table profiles available for discussion in the chat session.
+
+        Returns:
+            None
+
+        """
         table_names = [p.name for p in profiles]
         print("=" * 60)
         print("DQ CHAT SESSION")
