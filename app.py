@@ -6,6 +6,40 @@ from src.database import Database
 from src.db_inspector import DBInspector
 from graphs.dq_agent_graph import build_dq_agent
 
+def extract_message_text(message) -> str | None:
+    """Return displayable text from a LangChain/Gemini message object.
+
+    Args:
+        message: Message object returned by the LangGraph stream.
+
+    Returns:
+        str | None: Renderable text content, or `None` when the message has no
+        displayable text.
+
+    """
+    content = getattr(message, "content", None)
+    if isinstance(content, str):
+        return content or None
+
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str) and item:
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text")
+                if text:
+                    parts.append(text)
+            else:
+                text = getattr(item, "text", None)
+                if text:
+                    parts.append(text)
+
+        joined = "\n".join(parts).strip()
+        return joined or None
+
+    return None
+
 def init_session_state():
     """Initialize the Streamlit session keys used by the UI.
 
@@ -59,7 +93,8 @@ def resume_graph(graph, config, resume_value):
         None
 
     """
-    final_message = ""
+    assistant_messages = []
+    seen_message_ids = set()
     try:
         status_label = "Applying Fix..." if resume_value == "approve" else "Rejecting Fix..."
         with st.status(status_label) as status:
@@ -69,15 +104,24 @@ def resume_graph(graph, config, resume_value):
                     stream_mode="values"
             ):
                 last_message = chunk["messages"][-1]
-                if hasattr(last_message, "content") and last_message.type == "ai" and last_message.content:
-                    final_message = last_message.content
+                message_id = getattr(last_message, "id", None)
+                if (
+                    getattr(last_message, "type", None) == "ai"
+                    and message_id not in seen_message_ids
+                ):
+                    seen_message_ids.add(message_id)
+                    text = extract_message_text(last_message)
+                    if text:
+                        assistant_messages.append(text)
 
             status.update(label="Action Complete!", state="complete", expanded=False)
 
-        if final_message:
-            st.session_state.messages.append({"role": "assistant", "content": final_message})
+        for text in assistant_messages:
+            st.session_state.messages.append({"role": "assistant", "content": text})
     except Exception as e:
-        print(f"Error resuming graph after interrupt: {e}")
+        error_message = f"Error resuming graph after interrupt: {e}"
+        st.error(error_message)
+        st.session_state.messages.append({"role": "assistant", "content": error_message})
 
     st.session_state.pending_interrupt = None
 
@@ -98,7 +142,7 @@ def main():
         st.divider()
 
         selected_model = st.selectbox("AI Model",
-                             ["gemini-2.5-flash", "gemini-2.5-flash-lite"],
+                             ["gemini-2.5-flash", "gemini-3.1-flash-lite-preview"],
                              help="Flash is faster; Flash-Lite is more cost-efficient.")
 
     db, inspector, graph = init_agent(selected_model)
@@ -203,25 +247,42 @@ def main():
                 # Generate and display agent response
                 with st.chat_message("assistant"):
                     tool_calls_made = []
-                    final_response = ""
+                    assistant_messages = []
                     seen_message_ids = set()
 
-                    with st.status("Analyzing data...", expanded=True) as status:
-                        for chunk in graph.stream(
-                            {"messages": [HumanMessage(content=prompt)]},
-                            config=config,
-                            stream_mode="values"
-                        ):
-                            last_message = chunk["messages"][-1]
+                    try:
+                        with st.status("Analyzing data...", expanded=True) as status:
+                            for chunk in graph.stream(
+                                {"messages": [HumanMessage(content=prompt)]},
+                                config=config,
+                                stream_mode="values"
+                            ):
+                                last_message = chunk["messages"][-1]
+                                message_id = getattr(last_message, "id", None)
 
-                            if (hasattr(last_message, "tool_calls") and last_message.tool_calls
-                                    and last_message.id not in seen_message_ids):
-                                seen_message_ids.add(last_message.id)
-                                for tc in last_message.tool_calls:
-                                    tool_calls_made.append(tc)
+                                if (
+                                    hasattr(last_message, "tool_calls")
+                                    and last_message.tool_calls
+                                    and message_id not in seen_message_ids
+                                ):
+                                    for tc in last_message.tool_calls:
+                                        tool_calls_made.append(tc)
 
-                        final_response = last_message.content
-                        status.update(label="Analysis Complete!", state="complete", expanded=False)
+                                if (
+                                    getattr(last_message, "type", None) == "ai"
+                                    and message_id not in seen_message_ids
+                                ):
+                                    seen_message_ids.add(message_id)
+                                    text = extract_message_text(last_message)
+                                    if text:
+                                        assistant_messages.append(text)
+
+                            status.update(label="Analysis Complete!", state="complete", expanded=False)
+                    except Exception as e:
+                        error_message = f"Graph run failed: {e}"
+                        st.error(error_message)
+                        st.session_state.messages.append({"role": "assistant", "content": error_message})
+                        return
 
                     # Show tool calls in expander
                     if tool_calls_made:
@@ -229,17 +290,16 @@ def main():
                             for tc in tool_calls_made:
                                 st.code(f"{tc['name']}({tc['args']})", language="python")
 
+                    for text in assistant_messages:
+                        st.markdown(text)
+                        st.session_state.messages.append({"role": "assistant", "content": text})
+
                     # Check for pending interrupt
                     state = graph.get_state(config)
                     if state.next:
                         interrupt_data = state.tasks[0].interrupts[0].value
                         st.session_state.pending_interrupt = interrupt_data
                         st.rerun()
-
-                    if not state.next and final_response:
-                        # Show final response and add it to history
-                        st.markdown(final_response)
-                        st.session_state.messages.append({"role": "assistant", "content": final_response})
 
     with dqr_tab:
         st.header("Data Quality Report")

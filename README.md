@@ -37,6 +37,12 @@ The repo has three main execution paths:
 
 Supporting modules handle database access, profiling, reporting, prompts, audit logging, and optional LangSmith observability.
 
+The agent is built as a LangGraph StateGraph with three nodes:
+
+**Agent node** — calls Gemini with bound tools and decides what to investigate next.  
+**Tools node** — executes read-only database tools (schema inspection, null counts, SQL queries, GX checks).  
+**Fix node** — intercepts `propose_fix` tool calls, pauses for human approval via interrupt, and applies or rejects changes.
+
 ```mermaid
 graph TD;
 	__start__([<p>__start__</p>]):::first
@@ -99,6 +105,9 @@ graph TD;
    ```bash
    psql -U your_username -f scripts/setup_db.sql
    ```
+6. **Enable LangSmith tracing (optional)**  
+   Add your LangSmith credentials to `.env`. See `.env.example` for the required variables.  
+   Traces will appear at https://smith.langchain.com under your project name.
 
 ---
 
@@ -183,10 +192,13 @@ dq-analyzer/
 ├── README.md
 └── requirements.txt
 ```
+## 📸 Demo
 
+![DQ Agent Fix Proposal](docs/demo_screenshot.png)
 ---
 
 ## 🗺️ Roadmap
-* [ ] Expand the DQ agent into a broader multi-tool data operations assistant
-* [ ] Add richer rule packs and table-specific validation suites
-* [ ] Improve UI workflows for issue review, fix approval, and audit inspection
+* [ ] Airflow DAG monitoring integration — agent can check pipeline health alongside data quality
+* [ ] Unified data platform agent — natural language interface across warehouse, pipelines, and quality checks
+* [ ] RAG over schema documentation — agent reasons over table descriptions and lineage
+* [ ] Cloud deployment — containerised and deployable to GCP/AWS
