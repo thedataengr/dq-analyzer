@@ -4,12 +4,15 @@ from src.db_inspector import DBInspector
 from src.dq_checker import DQChecker
 import json
 
-def build_lc_tools(inspector: DBInspector, db: Database) -> list:
+def build_lc_tools(inspector: DBInspector, db: Database,
+                   vector_store=None, airflow_client=None) -> list:
     """Build LangChain tool wrappers for database inspection and fixes.
 
     Args:
         inspector: Database inspector used by the tool implementations.
         db: Database client used to execute SQL queries and writes.
+        vector_store: Optional SchemaVectorStore for RAG-based schema search.
+        airflow_client: Optional Airflow client for pipeline monitoring tools.
 
     Returns:
         list: LangChain tool callables exposed to the agent.
@@ -20,6 +23,7 @@ def build_lc_tools(inspector: DBInspector, db: Database) -> list:
         """Get all table names in the database.
 
         Call this first to discover available tables before any analysis.
+        This will return a complete list of all available tables.
 
         Returns:
             list[str]: Names of all available tables.
@@ -174,5 +178,116 @@ def build_lc_tools(inspector: DBInspector, db: Database) -> list:
         checker = DQChecker(db.database_url)
         return checker.run_checks(table_name)
 
-    return [get_table_names, get_table_schema, get_row_count,
+    @tool
+    def search_schema_docs(query: str) -> list[dict]:
+        """Search schema documentation for business context about tables and columns.
+
+        Use this when the question is about semantic meaning rather than raw data.
+        This is the right tool for questions about business definitions, expected
+        behavior, known historical issues, ETL timing, validation rules, and
+        root-cause clues already documented by humans. Prefer this over SQL when
+        you need explanatory context such as "what does this column mean?" or
+        "why might this table contain nulls?" Do not use it to count rows,
+        inspect live values, or validate current database contents.
+
+        Args:
+            query: Natural language question about a table, column, pipeline, or
+                known issue described in the schema documentation.
+
+        Returns:
+            list[dict]: Top matching documentation chunks returned by the vector
+            search backend.
+
+        """
+        return vector_store.search(query, n_results=2)
+
+    @tool
+    def get_dag_list():
+        """List available Airflow DAGs and whether each one is paused.
+
+        Use this first when the user refers to pipelines, jobs, schedulers, or
+        Airflow without naming a specific DAG. This helps discover the relevant
+        DAG ID before calling more specific Airflow tools. Do not use this when
+        you already know the DAG ID and need run-level details.
+
+        Returns:
+            list[dict]: DAG metadata including `dag_id`, pause status, and last
+            parsed time when available.
+
+        """
+
+        return airflow_client.get_dags()
+
+    @tool
+    def get_dag_status(dag_id: str):
+        """Get the latest status for a specific Airflow DAG.
+
+        Use this when you already know the DAG ID and need a quick health check:
+        whether the DAG is paused, what its latest run state is, and when that
+        run started or ended. Prefer this over run history when the question is
+        simply "is the pipeline failing?" or "what is its current status?"
+
+        Args:
+            dag_id: Exact Airflow DAG ID to inspect.
+
+        Returns:
+            dict: Latest DAG status including DAG metadata and the most recent
+            run information.
+
+        """
+
+        return airflow_client.get_dag_status(dag_id)
+
+    @tool
+    def get_dag_run_history(dag_id: str, limit: int = 5):
+        """Get recent run history for a specific Airflow DAG.
+
+        Use this when you need trend information across multiple runs, such as
+        checking whether failures are intermittent, recent, or recurring.
+        Prefer this over `get_dag_status` when one latest run is not enough to
+        diagnose reliability. If a failed run appears relevant, follow up with
+        `get_failed_task_logs` using its `run_id`.
+
+        Args:
+            dag_id: Exact Airflow DAG ID to inspect.
+            limit: Maximum number of recent DAG runs to return.
+
+        Returns:
+            list[dict]: Recent DAG runs with normalized state and timing fields.
+
+        """
+
+        return airflow_client.get_dag_run_history(dag_id, limit)
+
+    @tool
+    def get_failed_task_logs(dag_id: str, run_id: str):
+        """Get failed-task details for a specific DAG run.
+
+        Use this only after identifying a failed run from `get_dag_status` or
+        `get_dag_run_history`. This is the right tool when the user asks why a
+        pipeline failed, which task failed, or what the underlying error was.
+        Do not call it for successful or still-running runs because it is
+        focused on failure diagnosis.
+
+        Args:
+            dag_id: Exact Airflow DAG ID that owns the run.
+            run_id: Exact DAG run identifier for the failed run to inspect.
+
+        Returns:
+            list[dict]: Failed task entries including task ID, state, and log
+            content or an error message from log retrieval.
+
+        """
+
+        return airflow_client.get_failed_task_logs(dag_id, run_id)
+
+    tools = [get_table_names, get_table_schema, get_row_count,
             get_null_counts, run_sql_query, propose_fix, get_duplicate_count, run_dq_checks]
+
+    if vector_store:
+        tools.append(search_schema_docs)
+
+    if airflow_client:
+        tools += [get_dag_list, get_dag_status, get_dag_run_history, get_failed_task_logs]
+
+    return tools

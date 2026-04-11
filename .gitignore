@@ -33,3 +33,4 @@ Thumbs.db
 *.log
 *.jsonl
 .streamlit/
+chroma_db/

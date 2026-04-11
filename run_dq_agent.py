@@ -1,12 +1,48 @@
 import sys
+import os
 from dotenv import load_dotenv
 load_dotenv()
 from graphs.dq_agent_graph import build_dq_agent
 from src.database import Database
 from src.db_inspector import DBInspector
+from src.vector_store import SchemaVectorStore
+from src.airflow_client import get_airflow_client
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
+def extract_message_text(message) -> str | None:
+    """Return displayable text from a LangChain/Gemini message object.
+
+    Args:
+        message: Message object returned by the LangGraph stream.
+
+    Returns:
+        str | None: Renderable text content, or `None` when the message has no
+        displayable text.
+
+    """
+    content = getattr(message, "content", None)
+    if isinstance(content, str):
+        return content or None
+
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str) and item:
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text")
+                if text:
+                    parts.append(text)
+            else:
+                text = getattr(item, "text", None)
+                if text:
+                    parts.append(text)
+
+        joined = "\n".join(parts).strip()
+        return joined or None
+
+    return None
 
 def handle_interrupt(graph, config) -> bool:
     """Handle a pending graph interrupt for fix approval.
@@ -46,8 +82,10 @@ def handle_interrupt(graph, config) -> bool:
                 stream_mode="values"
         ):
             last_message = chunk["messages"][-1]
-            if hasattr(last_message, "content") and last_message.type == "ai" and last_message.content:
-                print(f"\nAgent: {last_message.content}\n")
+            if getattr(last_message, "type", None) == "ai":
+                text = extract_message_text(last_message)
+                if text:
+                    print(f"\nAgent: {text}\n")
     except Exception as e:
         print(f"Error resuming graph after interrupt: {e}")
 
@@ -65,8 +103,13 @@ def main():
         sys.exit(1)
 
     inspector = DBInspector(db)
+    vector_store = SchemaVectorStore(
+        api_key=os.environ.get("GEMINI_API_KEY"),
+        persist_path="./chroma_db"
+    )
+    airflow_client = get_airflow_client()
 
-    graph, tools = build_dq_agent(inspector, db)
+    graph, tools = build_dq_agent(inspector, db, os.environ.get("GEMINI_MODEL"), vector_store, airflow_client)
     thread_id = "dq-session-1"
     config = {"configurable": {"thread_id": thread_id}}
 
@@ -79,8 +122,8 @@ def main():
             if not user_input or user_input.lower() == "exit":
                 break
 
-            final_response = None
             seen_message_ids = set()
+            assistant_messages = []
             for chunk in graph.stream(
                     {"messages": [HumanMessage(content=user_input)]},
                     config=config,
@@ -91,16 +134,20 @@ def main():
                 # Print tool calls as they happen
                 if (hasattr(last_message, "tool_calls") and last_message.tool_calls
                         and last_message.id not in seen_message_ids):
-                    seen_message_ids.add(last_message.id)
                     for tc in last_message.tool_calls:
                         print(f"→ Calling: {tc['name']}({tc['args']})")
 
-                final_response = last_message
+                if (getattr(last_message, "type", None) == "ai"
+                        and last_message.id not in seen_message_ids):
+                    seen_message_ids.add(last_message.id)
+                    text = extract_message_text(last_message)
+                    if text:
+                        assistant_messages.append(text)
 
             interrupted = handle_interrupt(graph, config)
-            if (not interrupted and final_response and hasattr(final_response, "content")
-                    and final_response.type == "ai"):
-                print(f"\nAgent: {final_response.content}\n")
+            if not interrupted and assistant_messages:
+                print(f"\nAgent: {assistant_messages[-1]}\n")
+
     except Exception as e:
         print(f"\nGraph run failed: {e}")
     finally:

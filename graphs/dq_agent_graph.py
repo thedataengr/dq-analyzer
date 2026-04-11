@@ -21,20 +21,22 @@ class DQAgentState(MessagesState):
     # Inherited: messages: Annotated[list, add_messages]
     fix_history: Annotated[list[dict], operator.add]
 
-def build_dq_agent(inspector, db, ai_model=None) -> tuple:
+def build_dq_agent(inspector, db, ai_model=None, vector_store=None, airflow_client=None) -> tuple:
     """Build the compiled DQ agent graph and its bound tools.
 
     Args:
         inspector: Database inspection helper used by the tool layer.
         db: Database client used for read and write operations.
         ai_model: Optional Gemini model name to override the default model.
+        vector_store: Optional SchemaVectorStore for RAG-based schema search.
+        airflow_client: Optional Airflow client for pipeline monitoring tools.
 
     Returns:
         tuple: A `(compiled_graph, tools)` pair for the agent workflow.
 
     """
     # Build tools
-    tools = build_lc_tools(inspector, db)
+    tools = build_lc_tools(inspector, db, vector_store, airflow_client)
 
     # Build LLM with tools bound
     llm = ChatGoogleGenerativeAI(
