@@ -13,6 +13,9 @@ The DQ agent can:
 - Apply fixes only after human approval
 - Maintain an audit trail of all fix attempts
 - Answer follow-up questions about findings
+- Search schema documentation for business context via RAG
+- Monitor Airflow pipeline health and diagnose failures  
+- Synthesise findings across database, documentation, and pipelines
 
 ---
 
@@ -25,6 +28,8 @@ The DQ agent can:
 * **Validation:** Great Expectations
 * **Concurrency:** asyncio & httpx 
 * **Observability:** LangSmith (optional)
+* **Vector Store:** ChromaDB (for schema documentation)
+* **embedding model:** gemini-embedding-001 (for RAG)
 
 ---
 
@@ -142,6 +147,10 @@ python run_tool_agent.py
 ```bash
 python main.py
 ```
+### Index Schema Documentation (required for RAG)
+```bash
+python scripts/index_docs.py
+```
 
 ### Example Chat Queries
 * "Which table needs the most attention based on the current null counts?"
@@ -198,7 +207,7 @@ dq-analyzer/
 ---
 
 ## 🗺️ Roadmap
-* [ ] Airflow DAG monitoring integration — agent can check pipeline health alongside data quality
-* [ ] Unified data platform agent — natural language interface across warehouse, pipelines, and quality checks
-* [ ] RAG over schema documentation — agent reasons over table descriptions and lineage
 * [ ] Cloud deployment — containerised and deployable to GCP/AWS
+* [ ] Multi-database support
+* [ ] REST API interface (for applications to integrate Agent with their own UI)
+* [ ] Scheduled quality checks with alerting
