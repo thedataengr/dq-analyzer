@@ -94,6 +94,14 @@ def build_lc_tools(inspector: DBInspector, db: Database,
         """
         if not query.strip().upper().startswith("SELECT"):
             return [{"error": "Only SELECT queries are allowed"}]
+
+        # Circuit Breaker for Information Schema
+        prohibited_terms = ["information_schema", "pg_catalog", "pg_tables"]
+        if any(term in query.lower() for term in prohibited_terms):
+            return [{
+                "error": "Access to system catalog is restricted. Use the provided database tools to find table names."
+            }]
+
         return db.run_query(query)
 
     @tool

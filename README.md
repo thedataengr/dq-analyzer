@@ -29,7 +29,7 @@ The DQ agent can:
 * **Concurrency:** asyncio & httpx 
 * **Observability:** LangSmith (optional)
 * **Vector Store:** ChromaDB (for schema documentation)
-* **embedding model:** gemini-embedding-001 (for RAG)
+* **Embedding Model:** gemini-embedding-001 (for RAG)
 
 ---
 
@@ -153,24 +153,30 @@ python scripts/index_docs.py
 ```
 
 ### Example Chat Queries
-* "Which table needs the most attention based on the current null counts?"
-* "Write SQL to check rows with null values in column user_email."
-* "Which tables have the highest null percentage?"
-* "Propose a safe fix for missing values in the email column."
+* "Why does the orders table have null customer IDs?"
+* "Is the null customer_id issue related to an ETL pipeline failure?"
+* "Run the full DQ checks on all tables and summarise failures"
+* "What pipelines are failing and what went wrong?"
+* "Propose a fix for negative prices in the products table"
 
 ---
 
 ## 📂 Project Structure
 ```text
 dq-analyzer/
+├── docs/
+│   ├── schema_docs.md         # Business context and known issues for RAG
+│   └── demo_screenshot.png    # Demo screenshot
 ├── graphs/
 │   ├── __init__.py
 │   ├── dq_agent_graph.py      # Gemini-backed tool-use agent graph
 │   └── dq_basic_graph.py      # Rule-based LangGraph pipeline
 ├── scripts/
-│   └── setup_db.sql
+│   └── setup_db.sql           # Sample database setup
+│   └── index_docs.py          # Schema documentation indexer
 ├── src/
 │   ├── __init__.py
+│   ├── airflow_client.py      # Airflow REST API client (real + mock)
 │   ├── async_llm_client.py    # Async LLM wrapper
 │   ├── async_reporter.py      # Concurrent table analysis orchestration
 │   ├── audit.py               # Audit logging for fix attempts
@@ -189,7 +195,8 @@ dq-analyzer/
 │   ├── prompts.py             # Prompt generation
 │   ├── reporter.py            # Report formatting and export
 │   ├── tool_agent.py          # Gemini-driven tool agent loop
-│   └── tool_registry.py       # Tool declaration and execution registry
+│   ├── tool_registry.py       # Tool declaration and execution registry
+│   └── vector_store.py        # ChromaDB vector store for RAG
 ├── .env.example               # Environment variable template
 ├── .gitignore
 ├── app.py                     # Streamlit UI

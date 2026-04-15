@@ -80,6 +80,9 @@ def init_session_state():
         st.session_state.pending_prompt = None
     if "session_count" not in st.session_state:
         st.session_state.session_count = 1
+    if "pipeline_status" not in st.session_state:
+        st.session_state.pipeline_status = None
+
 
 @st.cache_resource
 def init_agent(ai_model):
@@ -148,7 +151,13 @@ def resume_graph(graph, config, resume_value):
             st.session_state.messages.append({"role": "assistant", "content": text})
 
     except Exception as e:
-        error_message = f"Error resuming graph after interrupt: {e}"
+        error_text = str(e)
+        if "429" in error_text or "RESOURCE_EXHAUSTED" in error_text:
+            error_message = "Quota exceeded for this model. Please select another model or try again later."
+        elif "503" in error_text or "UNAVAILABLE" in error_text:
+            error_message = "This model is currently unavailable. Please select another model or try again later."
+        else:
+            error_message = f"Error while resuming after interrupt: {e}"
         st.error(error_message)
         st.session_state.messages.append({"role": "assistant", "content": error_message})
 
@@ -171,8 +180,10 @@ def main():
         st.divider()
 
         selected_model = st.selectbox("AI Model",
-                             ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.1-flash-lite-preview"],
-                             help="Flash is faster; Flash-Lite models are cost-efficient.")
+                             ["gemini-2.5-flash", "gemini-2.5-flash-lite",
+                                    "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview",
+                                    "gemma-4-31b-it", "gemma-4-26b-a4b-it"],
+                             help="Flash models are faster; Flash-Lite models are cost-efficient.")
 
     db, inspector, graph, vector_store, airflow_client = init_agent(selected_model)
     config = {"configurable": {"thread_id": st.session_state.thread_id}}
@@ -198,6 +209,7 @@ def main():
             st.session_state.fix_history = []
             st.session_state.pending_interrupt = None
             st.session_state.pending_prompt = None
+            st.session_state.pipeline_status = None
             st.rerun()
 
         st.divider()
@@ -238,6 +250,18 @@ def main():
             for message in st.session_state.messages:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
+                    # Show tool calls in expander
+                    tool_calls_made = message.get("tool_calls", [])
+                    if tool_calls_made:
+                        # Filter out 'propose_fix' tool call as it has its own UI
+                        display_calls = [tc for tc in tool_calls_made if tc['name'] != 'propose_fix']
+                        if display_calls:
+                            with st.expander(f"🔧 {len(display_calls)} tool calls"):
+                                for tc in display_calls:
+                                    label = TOOL_LABELS.get(tc['name'], tc['name'])
+                                    st.markdown(f"**{label}**")
+                                    if tc['args']:
+                                        st.json(tc['args'])
 
         if st.session_state.get("pending_interrupt"):
             interrupt_data = st.session_state.pending_interrupt
@@ -276,8 +300,13 @@ def main():
                     resume_graph(graph, config, "reject")
                     st.rerun()
 
+        # Chat input — blocks until user submits
+        prompt = st.session_state.pop("pending_prompt", None)
+        if prompt is None and st.session_state.pending_interrupt is None:
+            prompt = st.chat_input("Ask about your data quality...")
+
         # Example prompts
-        if not (st.session_state.messages or st.session_state.pending_prompt):
+        if not (st.session_state.messages or prompt):
             st.markdown("**Try asking:**")
             examples = [
                 "Why does the orders table have null customer IDs?",
@@ -291,11 +320,6 @@ def main():
                     if st.button(example, use_container_width=True):
                         st.session_state.pending_prompt = example
                         st.rerun()
-
-        # Chat input — blocks until user submits
-        prompt = st.session_state.pop("pending_prompt", None)
-        if prompt is None:
-            prompt = st.chat_input("Ask about your data quality...")
 
         if prompt:
             # Add user message to history
@@ -339,24 +363,27 @@ def main():
                                         assistant_messages.append(text)
 
                             status.update(label="Analysis Complete!", state="complete", expanded=False)
+
                     except Exception as e:
-                        error_message = f"Graph run failed: {e}"
+                        error_text = str(e)
+                        if "429" in error_text or "RESOURCE_EXHAUSTED" in error_text:
+                            error_message = "Quota exceeded for this model. Please select another model or try again later."
+                        elif "503" in error_text or "UNAVAILABLE" in error_text:
+                            error_message = "This model is currently unavailable. Please select another model or try again later."
+                        else:
+                            error_message = f"Error: {e}"
                         st.error(error_message)
                         st.session_state.messages.append({"role": "assistant", "content": error_message})
                         return
 
-                    # Show tool calls in expander
-                    if tool_calls_made:
-                        with st.expander(f"🔧 {len(tool_calls_made)} tool calls"):
-                            for tc in tool_calls_made:
-                                label = TOOL_LABELS.get(tc['name'], tc['name'])
-                                st.markdown(f"**{label}**")
-                                if tc['args']:
-                                    st.json(tc['args'])
+                    if assistant_messages:
+                        st.markdown(assistant_messages[-1])
 
-                    for text in assistant_messages:
-                        st.markdown(text)
-                        st.session_state.messages.append({"role": "assistant", "content": text})
+                        st.session_state.messages.append({
+                            "role": "assistant",
+                            "content": assistant_messages[-1],
+                            "tool_calls": tool_calls_made
+                        })
 
                     # Check for pending interrupt
                     state = graph.get_state(config)
@@ -431,10 +458,16 @@ def main():
 
         if st.button("🔄 Refresh Pipeline Status", type="primary"):
             dags = airflow_client.get_dags()
+            # Fetch status for each DAG at refresh time, not on every rerun
+            st.session_state.pipeline_status = [
+                {**dag, "status": airflow_client.get_dag_status(dag["dag_id"])}
+                for dag in dags
+            ]
 
-            for dag in dags:
+        if st.session_state.get("pipeline_status"):
+            for dag in st.session_state.pipeline_status:
                 dag_id = dag["dag_id"]
-                status = airflow_client.get_dag_status(dag_id)
+                status = dag["status"]
                 state = status.get("state", "unknown")
                 is_paused = dag.get("is_paused", False)
 
